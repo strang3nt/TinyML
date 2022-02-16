@@ -41,9 +41,15 @@ let rec unify (t1 : ty) (t2 : ty) : subst =
     | _ -> type_error "%s not implemented" (pretty_ty t1)
 
 // TODO implement this
-let rec apply_subst (t : ty) (s : subst) : ty = 
-    t
-and check_against (t : ty) (s : subst) : tyvar =
+// TODO check, just a scheleton
+let rec apply_subst (s : subst) (t : ty): ty = 
+    match t with
+    | TyVar (_) -> TyVar (check_against s t)
+    | TyArrow (x, y) -> TyArrow(apply_subst s x, apply_subst s y)
+    | TyTuple (x) -> TyTuple(List.map (apply_subst s) x)
+    | _ -> type_error "apply_subst: cannot apply substitution to primitive type %s" (pretty_ty t)
+(* check_against finds the first tyvar for which t : ty is in s : subst *)
+and check_against (s : subst) (t : ty) : tyvar =
     let x, _ = List.find (fun (_, t_) -> t_ = t) s
     x
     
