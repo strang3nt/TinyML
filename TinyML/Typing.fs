@@ -53,10 +53,13 @@ and check_against (s : subst) (t : ty) : tyvar =
     let x, _ = List.find (fun (_, t_) -> t_ = t) s
     x
     
-
-
 // TODO implement this
-let compose_subst (s1 : subst) (s2 : subst) : subst = s1 @ s2
+(* 
+    case 1: different tyvars for the same ty s
+    case 2: different ty s for the same tyvars
+*)
+let compose_subst (s1 : subst) (s2 : subst) : subst =
+    s1 @ s2 |> List.distinctBy (fun (_,y) -> y)
 
 let rec freevars_ty (t : ty) : tyvar Set =
     match t with

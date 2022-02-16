@@ -8,6 +8,8 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Include="HelperFunctions.fs" />
+    <Compile Include="CompositionSubstTests.fs" />
     <Compile Include="UnificationTests.fs" />
   </ItemGroup>
 
@@ -19,11 +21,11 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Folder Include="Properties\" />
+	  <ProjectReference Include="../TinyML/TinyML.fsproj" />
   </ItemGroup>
 
   <ItemGroup>
-	  <ProjectReference Include="../TinyML/TinyML.fsproj" />
+    <Folder Include="Properties\" />
   </ItemGroup>
 	
 </Project>
