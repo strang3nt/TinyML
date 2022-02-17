@@ -6,60 +6,67 @@
 module TinyML.Typing
 
 open Ast
+open System.Collections.Generic
 
 let type_error fmt = throw_formatted TypeError fmt
 
 type subst = (tyvar * ty) list
 
-// TODO implement this
-let rec unify (t1 : ty) (t2 : ty) : subst =
-    match t1 with
-    | TyName (x) ->
-        match t2 with
-        | TyName (y) -> 
-            if x = y 
-            then [] 
-            else type_error "Cannot unify different primitive types %s and %s" (pretty_ty t1) (pretty_ty t2)
-        | TyVar (y) -> [(y, t1)] (* Here the substitution work the opposite way, substitute t1 with y *)
-        | _ -> type_error "Cannot unify primitive type %s with %s" (pretty_ty t1) (pretty_ty t2)
-    | TyVar (x) ->
-        match t2 with
-        | TyName (y) -> unify t2 t1
-        | TyVar (y) -> [(x, t2)]
-        | _ -> type_error "Cannot unify type variable %s with $s" (pretty_ty t1) (pretty_ty t2)
-    | TyTuple (x1::x) ->
-        match t2 with
-        | TyTuple (y1::y) -> 
-            if List.length(x) = List.length(y) 
-            then (unify x1 y1) @ (unify (TyTuple x) (TyTuple y))
-            else type_error "%s and %s have different lengths thus they are not unifiable" (pretty_ty t1) (pretty_ty t2)
-        | _ -> type_error "Cannot unify Tuple type %s with non tuple type %s" (pretty_ty t1) (pretty_ty t2)
-    | TyArrow (x, y) ->
-        match t2 with
-        | TyArrow (w, z) -> (unify x w) @ (unify y z)
-        | _ -> type_error "Cannot unify Arrow type %s with non arrow type %s" (pretty_ty t1) (pretty_ty t2)
-    | _ -> type_error "%s not implemented" (pretty_ty t1)
+(*
+    check if tyvar tvar occurs in ty t if true return true else return false.
+*)
+let rec occurs (tvar : tyvar) (t : ty) : bool = 
+    match t with
+    | TyArrow (x, y) -> occurs tvar x || occurs tvar y
+    | TyTuple (x) -> List.contains (TyVar (tvar)) x
+    | TyVar (x) -> tvar = x
+    | _ -> false
 
-// TODO implement this
-// TODO check, just a scheleton
+let rec unify (t1 : ty) (t2 : ty) : subst =
+    match t1, t2 with
+    | TyName (x), TyName (y) ->
+        if x = y 
+        then [] 
+        else type_error "unify: cannot unify different primitive types %s and %s" (pretty_ty t1) (pretty_ty t2)
+    | TyTuple (x::xs), TyTuple (y::ys) -> 
+        if List.length(xs) = List.length(ys) 
+        then (unify x y) @ (unify (TyTuple xs) (TyTuple ys)) 
+        else type_error "unify: tuples %s and %s have different lengths" (pretty_ty t1) (pretty_ty t2)
+    | TyArrow (x, y), TyArrow (w, z) -> (unify x w) @ (unify y z)
+    | TyVar(x), y -> 
+        if occurs x y 
+        then type_error "unify: %s occurs in %s, thus they are not unifiable" (pretty_ty t1) (pretty_ty t2)
+        else [(x, y)]
+    | _, TyVar(_) -> unify t2 t1
+    | _, _ -> type_error "unify: %s and %s are different types" (pretty_ty t1) (pretty_ty t2)
+    
+(* returns the tyvar itself when there is no correspondence *)
+let search_tyvar (s : subst) (t : tyvar) : ty =
+    let (_, y) = 
+        try
+            List.find (fun (x, _) -> t = x) s
+        with
+        | :? System.Collections.Generic.KeyNotFoundException -> (1, TyVar(t))
+    y
+
+(*
+    IDEA: search for suitable substitutions of t and return updated t
+    go through each term of t and search wether if each term is a tyvar and if it is indexed in s
+*)
 let rec apply_subst (s : subst) (t : ty): ty = 
     match t with
-    | TyVar (_) -> TyVar (check_against s t)
+    | TyName (_) -> t
+    | TyVar (x) -> search_tyvar s x
     | TyArrow (x, y) -> TyArrow(apply_subst s x, apply_subst s y)
     | TyTuple (x) -> TyTuple(List.map (apply_subst s) x)
-    | _ -> type_error "apply_subst: cannot apply substitution to primitive type %s" (pretty_ty t)
-(* check_against finds the first tyvar for which t : ty is in s : subst *)
-and check_against (s : subst) (t : ty) : tyvar =
-    let x, _ = List.find (fun (_, t_) -> t_ = t) s
-    x
-    
-// TODO implement this
+ 
 (* 
     case 1: different tyvars for the same ty s
     case 2: different ty s for the same tyvars
 *)
 let compose_subst (s1 : subst) (s2 : subst) : subst =
-    s1 @ s2 |> List.distinctBy (fun (_,y) -> y)
+    let mutable i = 0
+    s1 @ s2 |> List.distinctBy (fun (_,y) -> y) |> List.map (fun (_, y) -> let r = (i, y) in i <- i+1; r)
 
 let rec freevars_ty (t : ty) : tyvar Set =
     match t with

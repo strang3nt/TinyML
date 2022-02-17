@@ -9,9 +9,14 @@ open TinyML.Typing
 let Test1_composeSubst_diffTyVars () =
     let s1 = [(1, TyArrow(TyVar(7), TyInt)); (2, TyTuple([TyInt; TyInt])); (3, TyVar(3))]
     let s2 = [(4, TyVar(8)); (5, TyArrow(TyVar(7), TyInt)); (6, TyVar(3))]
-    let v1 = [(1, TyArrow(TyVar(7), TyInt)); (2, TyTuple([TyInt; TyInt])); (3, TyVar(3)); (4, TyVar(8))]
+    let v1 = [(0, TyArrow(TyVar(7), TyInt)); (1, TyTuple([TyInt; TyInt])); (2, TyVar(3)); (3, TyVar(8))]
     let v2 = compose_subst s1 s2
     CollectionAssert.AreEqual(v1, v2, printSubst v2)
 
+[<Test>]
 let Test2_composeSubst_sameTyVars () =
-    Assert.Fail("Not implemented")
+    let s1 = [(1, TyArrow(TyVar(7), TyInt)); (2, TyTuple([TyInt; TyInt])); (3, TyVar(3))]
+    let s2 = [(1, TyVar(8)); (5, TyArrow(TyVar(7), TyInt)); (6, TyVar(3))]
+    let v1 = [(0, TyArrow(TyVar(7), TyInt)); (1, TyTuple([TyInt; TyInt])); (2, TyVar(3)); (3, TyVar(8))]
+    let v2 = compose_subst s1 s2
+    CollectionAssert.AreEqual(v1, v2, printSubst v2)
