@@ -6,7 +6,6 @@
 module TinyML.Typing
 
 open Ast
-open System.Collections.Generic
 
 let type_error fmt = throw_formatted TypeError fmt
 
@@ -17,8 +16,8 @@ type subst = (tyvar * ty) list
 *)
 let rec occurs (tvar : tyvar) (t : ty) : bool = 
     match t with
-    | TyArrow (x, y) -> occurs tvar x || occurs tvar y
-    | TyTuple (x) -> List.contains (TyVar (tvar)) x
+    | TyArrow (x, y) -> (occurs tvar x) || (occurs tvar y)
+    | TyTuple (x::xs) -> (occurs tvar x) || (occurs tvar (TyTuple xs))
     | TyVar (x) -> tvar = x
     | _ -> false
 
@@ -28,9 +27,11 @@ let rec unify (t1 : ty) (t2 : ty) : subst =
         if x = y 
         then [] 
         else type_error "unify: cannot unify different primitive types %s and %s" (pretty_ty t1) (pretty_ty t2)
-    | TyTuple (x::xs), TyTuple (y::ys) -> 
-        if List.length(xs) = List.length(ys) 
-        then (unify x y) @ (unify (TyTuple xs) (TyTuple ys)) 
+    | TyTuple (x), TyTuple (y) -> 
+        if List.length(x) = 0 && List.length(y) = 0
+        then []
+        else if List.length(x) = List.length(y)
+        then unify (List.head x) (List.head y) @ unify (TyTuple (List.skip 1 x)) (TyTuple (List.skip 1 y))
         else type_error "unify: tuples %s and %s have different lengths" (pretty_ty t1) (pretty_ty t2)
     | TyArrow (x, y), TyArrow (w, z) -> (unify x w) @ (unify y z)
     | TyVar(x), y -> 
@@ -39,7 +40,7 @@ let rec unify (t1 : ty) (t2 : ty) : subst =
         else [(x, y)]
     | _, TyVar(_) -> unify t2 t1
     | _, _ -> type_error "unify: %s and %s are different types" (pretty_ty t1) (pretty_ty t2)
-    
+
 (* returns the tyvar itself when there is no correspondence *)
 let search_tyvar (s : subst) (t : tyvar) : ty =
     let (_, y) = 
