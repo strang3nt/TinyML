@@ -1,7 +1,7 @@
-module TinyML.test.unification
+module TinyML.Tests.Unification
 
 open NUnit.Framework
-open TinyML.test.helpers
+open TinyML.Tests.Helpers
 open TinyML.Ast
 open TinyML.Typing
 

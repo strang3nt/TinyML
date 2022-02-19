@@ -1,4 +1,4 @@
-﻿module TinyML.test.helpers
+﻿module TinyML.Tests.Helpers
 
 open TinyML.Ast
 open TinyML.Typing

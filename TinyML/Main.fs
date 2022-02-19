@@ -63,27 +63,10 @@ let main_interactive () =
                     x, (t, v)
 
             printfn "val %s : %s = %s" x (pretty_ty t) (pretty_value v)
-                
-    
-let rec printSubst (subst : subst) = 
-    match subst with
-    | [] -> ""
-    | ((_tyvar, _ty) :: rest) -> sprintf "[%d , %s] , %s" _tyvar (pretty_ty _ty) (printSubst rest)
-
-let printprint x y = 
-    printfn "fuch %s" (printSubst (unify x y))
 
 [<EntryPoint>]
 let main argv =
     let r =
-        let t1 = TyName ("Int")
-        let t2 = TyVar (1)
-        let subst = unify t1 t2
-        printf "ciao"
-        printprint t1 t2; 1
-    Console.ReadLine () |> ignore
-    r
-    (*
         try 
             if argv.Length < 1 then main_interactive ()
             else main_interpreter argv.[0]
@@ -91,4 +74,3 @@ let main argv =
         with e -> printfn "\nexception caught: %O" e; 1
     Console.ReadLine () |> ignore
     r
-    *)

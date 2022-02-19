@@ -1,7 +1,7 @@
-﻿module TinyML.test.composesubst
+﻿module TinyML.Tests.Composesubst
 
 open NUnit.Framework
-open TinyML.test.helpers
+open TinyML.Tests.Helpers
 open TinyML.Ast
 open TinyML.Typing
 
