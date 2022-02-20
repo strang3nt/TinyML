@@ -14,10 +14,8 @@ type subst = (tyvar * ty) list
 (* returns the tyvar itself when there is no correspondence *)
 let search_tyvar (s : subst) (t : tyvar) : ty =
     let (_, y) = 
-        try
-            List.find (fun (x, _) -> t = x) s
-        with
-        | :? System.Collections.Generic.KeyNotFoundException -> (1, TyVar(t))
+        try List.find (fun (x, _) -> t = x) s
+        with :? System.Collections.Generic.KeyNotFoundException -> (1, TyVar(t))
     y
 
 (*
@@ -65,7 +63,7 @@ let rec unify (t1 : ty) (t2 : ty) : subst =
         then type_error "unify: %s occurs in %s, thus they are not unifiable" (pretty_ty t1) (pretty_ty t2)
         else if TyVar(x) = y then [] else [(x, y)]
     | _, TyVar(_) -> unify t2 t1
-    | _, _ -> type_error "unify: %s and %s are different types" (pretty_ty t1) (pretty_ty t2)
+    | _ -> type_error "unify: %s and %s are different types" (pretty_ty t1) (pretty_ty t2)
 
 (* 
     Compose two substitutions S1 and S2 
@@ -97,10 +95,33 @@ let gamma0 = [
 
 ]
 
+let gamma0_scheme_env = List.map (fun (x, y) -> (x, Forall ([], y) )) gamma0
+
+let mutable private tyvar_counter = -1;
+
+let tyvar_generator = tyvar_counter <- tyvar_counter + 1; tyvar_counter
+
+let instantiate (Forall (tyvar_list, t)) : ty =
+    let sub = List.map (fun x -> (x, TyVar(tyvar_generator))) tyvar_list
+    apply_subst sub t
+
+let generalize (s : scheme env) (t : ty) : scheme = Forall ([], t)
+
 // TODO for exam
 let rec typeinfer_expr (env : scheme env) (e : expr) : ty * subst =
-    failwith "not implemented"
-
+    match e with
+    | Lit (LInt _) -> TyInt, []
+    | Lit (LFloat _) -> TyFloat, []
+    | Lit (LString _) -> TyString, []
+    | Lit (LChar _) -> TyChar, []
+    | Lit (LBool _) -> TyBool, []
+    | Lit LUnit -> TyUnit, []
+    | Var x -> 
+        let (_, s1) = 
+            try List.find(fun (y, _) -> y = x) env
+            with :? System.Collections.Generic.KeyNotFoundException -> type_error "typeinfer_expr: variable %s is not defined" x
+        instantiate s1, []
+    | _ -> unexpected_error "typecheck_expr: unsupported expression: %s [AST: %A]" (pretty_expr e) e
 
 // type checker
 //
