@@ -51,9 +51,15 @@ let rec unify (t1 : ty) (t2 : ty) : subst =
         if List.length(x) = 0 && List.length(y) = 0
         then []
         else if List.length(x) = List.length(y)
-        then unify (List.head x) (List.head y) @ unify (TyTuple (List.skip 1 x)) (TyTuple (List.skip 1 y))
+        then 
+            let s1 = unify (List.head x) (List.head y) 
+            s1 @ unify
+                (TyTuple (List.skip 1 x |> List.map (fun i -> apply_subst s1 i)))
+                (TyTuple (List.skip 1 y |> List.map (fun i -> apply_subst s1 i)))
         else type_error "unify: tuples %s and %s have different lengths" (pretty_ty t1) (pretty_ty t2)
-    | TyArrow (x, y), TyArrow (w, z) -> (unify x w) @ (unify y z)
+    | TyArrow (x, y), TyArrow (w, z) -> 
+        let s1 = (unify x w)
+        s1 @ (unify (apply_subst s1 y) (apply_subst s1 z))
     | TyVar(x), y -> 
         if occurs x y 
         then type_error "unify: %s occurs in %s, thus they are not unifiable" (pretty_ty t1) (pretty_ty t2)
