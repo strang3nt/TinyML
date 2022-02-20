@@ -11,6 +11,26 @@ let type_error fmt = throw_formatted TypeError fmt
 
 type subst = (tyvar * ty) list
 
+(* returns the tyvar itself when there is no correspondence *)
+let search_tyvar (s : subst) (t : tyvar) : ty =
+    let (_, y) = 
+        try
+            List.find (fun (x, _) -> t = x) s
+        with
+        | :? System.Collections.Generic.KeyNotFoundException -> (1, TyVar(t))
+    y
+
+(*
+    IDEA: search for suitable substitutions of t and return updated t
+    go through each term of t and search wether if each term is a tyvar and if it is indexed in s
+*)
+let rec apply_subst (s : subst) (t : ty): ty = 
+    match t with
+    | TyName (_) -> t
+    | TyVar (x) -> search_tyvar s x
+    | TyArrow (x, y) -> TyArrow(apply_subst s x, apply_subst s y)
+    | TyTuple (x) -> TyTuple(List.map (apply_subst s) x)
+
 (*
     check if tyvar tvar occurs in ty t if true return true else return false.
 *)
@@ -37,37 +57,20 @@ let rec unify (t1 : ty) (t2 : ty) : subst =
     | TyVar(x), y -> 
         if occurs x y 
         then type_error "unify: %s occurs in %s, thus they are not unifiable" (pretty_ty t1) (pretty_ty t2)
-        else [(x, y)]
+        else if TyVar(x) = y then [] else [(x, y)]
     | _, TyVar(_) -> unify t2 t1
     | _, _ -> type_error "unify: %s and %s are different types" (pretty_ty t1) (pretty_ty t2)
 
-(* returns the tyvar itself when there is no correspondence *)
-let search_tyvar (s : subst) (t : tyvar) : ty =
-    let (_, y) = 
-        try
-            List.find (fun (x, _) -> t = x) s
-        with
-        | :? System.Collections.Generic.KeyNotFoundException -> (1, TyVar(t))
-    y
-
-(*
-    IDEA: search for suitable substitutions of t and return updated t
-    go through each term of t and search wether if each term is a tyvar and if it is indexed in s
-*)
-let rec apply_subst (s : subst) (t : ty): ty = 
-    match t with
-    | TyName (_) -> t
-    | TyVar (x) -> search_tyvar s x
-    | TyArrow (x, y) -> TyArrow(apply_subst s x, apply_subst s y)
-    | TyTuple (x) -> TyTuple(List.map (apply_subst s) x)
- 
 (* 
-    case 1: different tyvars for the same ty s
-    case 2: different ty s for the same tyvars
+    Compose two substitutions S1 and S2 
+    by applying S1 to all the substitute types in S2, 
+    then add in any substitutions in S1 
+    unless S2 already has a substitute for that variable.
 *)
 let compose_subst (s1 : subst) (s2 : subst) : subst =
-    let mutable i = 0
-    s1 @ s2 |> List.distinctBy (fun (_,y) -> y) |> List.map (fun (_, y) -> let r = (i, y) in i <- i+1; r)
+    let s2_applied = List.map (fun (y, x) -> (y, apply_subst s2 x)) s1 
+    let s2_filtered = List.filter (fun (x, _) -> not (List.exists (fun (y, _) -> x = y) s2_applied)) s2
+    s2_applied @ s2_filtered
 
 let rec freevars_ty (t : ty) : tyvar Set =
     match t with
