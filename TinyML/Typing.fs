@@ -99,10 +99,15 @@ let gamma0_scheme_env = List.map (fun (x, y) -> (x, Forall ([], y) )) gamma0
 
 let mutable private tyvar_counter = -1;
 
-let tyvar_generator = tyvar_counter <- tyvar_counter + 1; tyvar_counter
+let tyvar_generator () =
+    tyvar_counter <- tyvar_counter + 1
+    tyvar_counter
+
+let tyvar_reset () = 
+    tyvar_counter <- -1
 
 let instantiate (Forall (tyvar_list, t)) : ty =
-    let sub = List.map (fun x -> (x, TyVar(tyvar_generator))) tyvar_list
+    let sub = List.map (fun x -> (x, TyVar(tyvar_generator()))) tyvar_list
     apply_subst sub t
 
 // the list of all type variables appearing in the type that don't appear in the type environment
@@ -130,7 +135,7 @@ let rec typeinfer_expr (env : scheme env) (e : expr) : ty * subst =
         instantiate s1, []
 
     | Lambda (x, None, e)  ->
-        let tyvar_ = TyVar(tyvar_generator)
+        let tyvar_ = TyVar(tyvar_generator())
         let (t2, s) = typeinfer_expr ((x, Forall ([], tyvar_)) :: env) e
         let t1 = apply_subst s tyvar_
         TyArrow (t1, t2), s
@@ -140,7 +145,7 @@ let rec typeinfer_expr (env : scheme env) (e : expr) : ty * subst =
         TyArrow (t1, t2), s
 
     | App (e1, e2) ->
-        let tyvar_ = TyVar (tyvar_generator)
+        let tyvar_ = TyVar (tyvar_generator())
         let (t1, s1) = typeinfer_expr env e1
         let (t2, s2) = typeinfer_expr (apply_subst_to_env s1 env) e2
         let s3 = unify (apply_subst s2 t1) (TyArrow (t2, tyvar_))
@@ -158,7 +163,7 @@ let rec typeinfer_expr (env : scheme env) (e : expr) : ty * subst =
         t2, compose_subst s1 s2
 
     | LetRec (f, None, e1, e2) ->
-        let env1 = (f, Forall ([], TyVar (tyvar_generator)))::env
+        let env1 = (f, Forall ([], TyVar (tyvar_generator())))::env
         let (t1, s1) = typeinfer_expr env1 e1
         let env2 = apply_subst_to_env s1 ((f, (generalize (apply_subst_to_env s1 env1) t1)) :: env)
         let (t2, s2) = typeinfer_expr env2 e2
