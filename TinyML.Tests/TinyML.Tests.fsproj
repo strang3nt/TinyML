@@ -9,6 +9,7 @@
 
   <ItemGroup>
     <Compile Include="HelperFunctions.fs" />
+    <Compile Include="TestsInference.fs" />
     <Compile Include="TestsCompositionSubst.fs" />
     <Compile Include="TestsUnification.fs" />
     <Compile Include="Program.fs" />

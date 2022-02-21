@@ -17,9 +17,10 @@ let interpret_expr tenv venv e =
     #if DEBUG
     printfn "AST:\t%A\npretty:\t%s" e (pretty_expr e)
     #endif
-    let t = Typing.typecheck_expr tenv e
+    let t = Typing.typeinfer_expr tenv e
+    let (ty_, _) = t
     #if DEBUG
-    printfn "type:\t%s" (pretty_ty t)
+    printfn "type:\t%s" (pretty_ty ty_)
     #endif
     let v = Eval.eval_expr venv e
     #if DEBUG
@@ -39,26 +40,27 @@ let main_interpreter filename =
         use fstr = new IO.FileStream (filename, IO.FileMode.Open)
         use rd = new IO.StreamReader (fstr)
         let prg = parse_from_TextReader rd filename Parser.program 
-        let t, v = interpret_expr [] [] prg
+        let (t, _), v = interpret_expr [] [] prg
         printfn "type:\t%s\nvalue:\t%s" (pretty_ty t) (pretty_value v)
 
 let main_interactive () =
     printfn "entering interactive mode..."
-    let mutable tenv = Typing.gamma0
+    let mutable tenv = Typing.gamma0_scheme_env
     let mutable venv = []
     while true do
         trap <| fun () ->
             printf "\n> "
             stdout.Flush ()
-            let x, (t, v) =
+            let x, ((t, _), v) =
                 match parse_from_TextReader stdin "LINE" Parser.interactive with 
                 | IExpr e ->
                     "it", interpret_expr tenv venv e
 
                 | IBinding (_, x, _, _ as b) ->
                     let t, v = interpret_expr tenv venv (LetIn (b, Var x)) // TRICK: put the variable itself as body after the in
+                    let (ty_, _) = t
                     // update global environments
-                    tenv <- (x, t) :: tenv
+                    tenv <- (x, Forall ([], ty_)) :: tenv
                     venv <- (x, v) :: venv
                     x, (t, v)
 

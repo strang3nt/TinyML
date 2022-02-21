@@ -63,7 +63,7 @@ let rec unify (t1 : ty) (t2 : ty) : subst =
         then type_error "unify: %s occurs in %s, thus they are not unifiable" (pretty_ty t1) (pretty_ty t2)
         else if TyVar(x) = y then [] else [(x, y)]
     | _, TyVar(_) -> unify t2 t1
-    | _ -> type_error "unify: %s and %s are different types" (pretty_ty t1) (pretty_ty t2)
+    | _ -> type_error "unify: %s and %s are not unifiable" (pretty_ty t1) (pretty_ty t2)
 
 (* 
     Compose two substitutions S1 and S2 
@@ -105,7 +105,14 @@ let instantiate (Forall (tyvar_list, t)) : ty =
     let sub = List.map (fun x -> (x, TyVar(tyvar_generator))) tyvar_list
     apply_subst sub t
 
-let generalize (s : scheme env) (t : ty) : scheme = Forall ([], t)
+// the list of all type variables appearing in the type that don't appear in the type environment
+let generalize (env : scheme env) (t : ty) : scheme = 
+    let freevars_env = Set.fold (fun set (x, y) -> Set.union set (freevars_scheme y)) Set.empty (Set.ofList env)
+    let freevars_t = freevars_scheme (Forall ([], t))
+    Forall (Set.toList( Set.difference freevars_t freevars_env), t)
+
+let apply_subst_to_env (s: subst) (env : scheme env) : scheme env=
+    List.map (fun (x, Forall (l, t)) -> (x, Forall (l, apply_subst s t))) env
 
 // TODO for exam
 let rec typeinfer_expr (env : scheme env) (e : expr) : ty * subst =
@@ -121,8 +128,53 @@ let rec typeinfer_expr (env : scheme env) (e : expr) : ty * subst =
             try List.find(fun (y, _) -> y = x) env
             with :? System.Collections.Generic.KeyNotFoundException -> type_error "typeinfer_expr: variable %s is not defined" x
         instantiate s1, []
-    | _ -> unexpected_error "typecheck_expr: unsupported expression: %s [AST: %A]" (pretty_expr e) e
 
+    | Lambda (x, None, e)  ->
+        let tyvar_ = TyVar(tyvar_generator)
+        let (t2, s) = typeinfer_expr ((x, Forall ([], tyvar_)) :: env) e
+        let t1 = apply_subst s tyvar_
+        TyArrow (t1, t2), s
+
+    | Lambda (x, Some t1, e) ->
+        let (t2, s) = typeinfer_expr ((x, Forall ([], t1)) :: env) e
+        TyArrow (t1, t2), s
+
+    | App (e1, e2) ->
+        let tyvar_ = TyVar (tyvar_generator)
+        let (t1, s1) = typeinfer_expr env e1
+        let (t2, s2) = typeinfer_expr (apply_subst_to_env s1 env) e2
+        let s3 = unify (apply_subst s2 t1) (TyArrow (t2, tyvar_))
+        let s1_s2_s3 = compose_subst s1 (compose_subst s2 s3)
+        apply_subst s1_s2_s3 tyvar_, s1_s2_s3
+
+    | Let (x, t, e1, e2) ->
+        let (t1, s1) = typeinfer_expr env e1
+        match t with
+        | None -> ()
+        | Some decl_type -> if t1 <> decl_type then type_error "typeinfer_expr: type annotation in let binding of %s is wrong: exptected %s, but got %s" x (pretty_ty decl_type ) (pretty_ty t1)
+        let s = generalize (apply_subst_to_env s1 env) t1
+        let env2 = apply_subst_to_env s1 ((x, s) :: env)
+        let (t2, s2) = typeinfer_expr env2 e2
+        t2, compose_subst s1 s2
+
+    | LetRec (f, None, e1, e2) ->
+        let env1 = (f, Forall ([], TyVar (tyvar_generator)))::env
+        let (t1, s1) = typeinfer_expr env1 e1
+        let env2 = apply_subst_to_env s1 ((f, (generalize (apply_subst_to_env s1 env1) t1)) :: env)
+        let (t2, s2) = typeinfer_expr env2 e2
+        t2, compose_subst s1 s2
+
+    | LetRec (f, Some tf, e1, e2) -> 
+        let env0 = (f, Forall ([], tf)) :: env
+        let (t1, s1) = typeinfer_expr env0 e1
+        match t1 with
+        | TyArrow _ -> ()
+        | _ -> type_error "typeinfer_expr: let rec is restricted to functions, but got type %s" (pretty_ty t1)
+        if t1 <> tf then type_error "typeinfer_expr: let rec type mismatch: expected %s, but got %s" (pretty_ty tf) (pretty_ty t1)
+        typeinfer_expr env0 e2
+
+    | _ -> unexpected_error "typeïnfer_expr: unsupported expression: %s [AST: %A]" (pretty_expr e) e
+    
 // type checker
 //
     
