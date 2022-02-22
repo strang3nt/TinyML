@@ -29,9 +29,6 @@ let rec apply_subst (s : subst) (t : ty): ty =
     | TyArrow (x, y) -> TyArrow(apply_subst s x, apply_subst s y)
     | TyTuple (x) -> TyTuple(List.map (apply_subst s) x)
 
-(*
-    check if tyvar tvar occurs in ty t if true return true else return false.
-*)
 let rec occurs (tvar : tyvar) (t : ty) : bool = 
     match t with
     | TyArrow (x, y) -> (occurs tvar x) || (occurs tvar y)
@@ -61,16 +58,10 @@ let rec unify (t1 : ty) (t2 : ty) : subst =
     | TyVar(x), y -> 
         if occurs x y 
         then type_error "unify: %s occurs in %s, thus they are not unifiable" (pretty_ty t1) (pretty_ty t2)
-        else if TyVar(x) = y then [] else [(x, y)]
+        else if t1 = y then [] else [(x, y)]
     | _, TyVar(_) -> unify t2 t1
     | _ -> type_error "unify: %s and %s are not unifiable" (pretty_ty t1) (pretty_ty t2)
 
-(* 
-    Compose two substitutions S1 and S2 
-    by applying S1 to all the substitute types in S2, 
-    then add in any substitutions in S1 
-    unless S2 already has a substitute for that variable.
-*)
 let compose_subst (s1 : subst) (s2 : subst) : subst =
     let s2_applied = List.map (fun (y, x) -> (y, apply_subst s2 x)) s1 
     let s2_filtered = List.filter (fun (x, _) -> not (List.exists (fun (y, _) -> x = y) s2_applied)) s2
@@ -178,7 +169,27 @@ let rec typeinfer_expr (env : scheme env) (e : expr) : ty * subst =
         if t1 <> tf then type_error "typeinfer_expr: let rec type mismatch: expected %s, but got %s" (pretty_ty tf) (pretty_ty t1)
         typeinfer_expr env0 e2
 
-    | _ -> unexpected_error "typeïnfer_expr: unsupported expression: %s [AST: %A]" (pretty_expr e) e
+    | IfThenElse (e1, e2, e3o) -> 
+        let (t1, s1) = typeinfer_expr env e1
+        if t1 <> TyBool then type_error "typeinfer_expr: if condition must be a bool, but got a %s" (pretty_ty t1)
+        let env1 = apply_subst_to_env s1 env
+        let (t2, s2) = typeinfer_expr env1 e2
+        match e3o with
+        | None ->
+            if t2 <> TyUnit then type_error "typeinfer_expr: if-then without else requires unit type in then branch, but got %s" (pretty_ty t2)
+            TyUnit, compose_subst s2 s1
+        | Some e3 ->
+            let (t3, s3) = typeinfer_expr (apply_subst_to_env s2 env1) e3
+            if t2 <> t3 then type_error "typeinfer_expr: type mismatch in if-then-else: then branch has type %s and is different from else branch type %s" (pretty_ty t2) (pretty_ty t3)
+            t3, compose_subst s3 (compose_subst s2 s1)
+
+    | Tuple ( el ) ->
+        let (tr, sub) = List.fold (fun ((tl, s) : (ty list * subst)) (en : expr) -> 
+            let (tn, sn) = typeinfer_expr env en
+            tn::tl, compose_subst s sn) ([], []) el 
+        TyTuple tr, sub
+
+    | _ -> unexpected_error "typeinfer_expr: unsupported expression: %s [AST: %A]" (pretty_expr e) e
     
 // type checker
 //
