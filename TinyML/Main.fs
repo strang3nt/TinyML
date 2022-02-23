@@ -40,7 +40,7 @@ let main_interpreter filename =
         use fstr = new IO.FileStream (filename, IO.FileMode.Open)
         use rd = new IO.StreamReader (fstr)
         let prg = parse_from_TextReader rd filename Parser.program 
-        let (t, _), v = interpret_expr [] [] prg
+        let (t, _), v = interpret_expr Typing.gamma0_scheme_env [] prg
         printfn "type:\t%s\nvalue:\t%s" (pretty_ty t) (pretty_value v)
 
 let main_interactive () =

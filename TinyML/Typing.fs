@@ -80,13 +80,13 @@ let freevars_scheme (Forall (tvs, t)) =
 // type inference
 //
 
-let gamma0 = [
+let gamma0 : ty env = [
     ("+", TyArrow (TyInt, TyArrow (TyInt, TyInt)))
     ("-", TyArrow (TyInt, TyArrow (TyInt, TyInt)))
 
 ]
 
-let gamma0_scheme_env = List.map (fun (x, y) -> (x, Forall ([], y) )) gamma0
+let gamma0_scheme_env : scheme env = List.map (fun (x, y) -> (x, Forall ([], y) )) gamma0
 
 let mutable private tyvar_counter = -1;
 
@@ -171,7 +171,7 @@ let rec typeinfer_expr (env : scheme env) (e : expr) : ty * subst =
 
     | IfThenElse (e1, e2, e3o) -> 
         let (t1, s1) = typeinfer_expr env e1
-        if t1 <> TyBool then type_error "typeinfer_expr: if condition must be a bool, but got a %s" (pretty_ty t1)
+        if t1 <> TyBool then type_error "typeinfer_expr: if condition must be a bool, but got %s" (pretty_ty t1)
         let env1 = apply_subst_to_env s1 env
         let (t2, s2) = typeinfer_expr env1 e2
         match e3o with
@@ -185,9 +185,16 @@ let rec typeinfer_expr (env : scheme env) (e : expr) : ty * subst =
 
     | Tuple ( el ) ->
         let (tr, sub) = List.fold (fun ((tl, s) : (ty list * subst)) (en : expr) -> 
-            let (tn, sn) = typeinfer_expr env en
+            let (tn, sn) = typeinfer_expr (apply_subst_to_env s env) en
             tn::tl, compose_subst s sn) ([], []) el 
         TyTuple tr, sub
+
+    | BinOp (e1, ("+"| "-" as op), e2) ->
+        typeinfer_expr env (App (App (Var op, e1), e2))
+    
+    | BinOp (_, op, _) -> unexpected_error "typeinfer_expr: binary operator %s not supported" op
+
+    | UnOp (op, _) -> unexpected_error "typeinfer_expr: unary operator %s not supported" op
 
     | _ -> unexpected_error "typeinfer_expr: unsupported expression: %s [AST: %A]" (pretty_expr e) e
     
