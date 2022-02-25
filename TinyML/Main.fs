@@ -17,9 +17,10 @@ let interpret_expr tenv venv e =
     #if DEBUG
     printfn "AST:\t%A\npretty:\t%s" e (pretty_expr e)
     #endif
-    let t = Typing.typecheck_expr tenv e
+    let t = Typing.typeinfer_expr tenv e
+    let (ty_, _) = t
     #if DEBUG
-    printfn "type:\t%s" (pretty_ty t)
+    printfn "type:\t%s" (pretty_ty ty_)
     #endif
     let v = Eval.eval_expr venv e
     #if DEBUG
@@ -39,51 +40,35 @@ let main_interpreter filename =
         use fstr = new IO.FileStream (filename, IO.FileMode.Open)
         use rd = new IO.StreamReader (fstr)
         let prg = parse_from_TextReader rd filename Parser.program 
-        let t, v = interpret_expr [] [] prg
+        let (t, _), v = interpret_expr Typing.gamma0_scheme_env [] prg
         printfn "type:\t%s\nvalue:\t%s" (pretty_ty t) (pretty_value v)
 
 let main_interactive () =
     printfn "entering interactive mode..."
-    let mutable tenv = Typing.gamma0
+    let mutable tenv = Typing.gamma0_scheme_env
     let mutable venv = []
     while true do
         trap <| fun () ->
             printf "\n> "
             stdout.Flush ()
-            let x, (t, v) =
+            let x, ((t, _), v) =
                 match parse_from_TextReader stdin "LINE" Parser.interactive with 
                 | IExpr e ->
                     "it", interpret_expr tenv venv e
 
                 | IBinding (_, x, _, _ as b) ->
                     let t, v = interpret_expr tenv venv (LetIn (b, Var x)) // TRICK: put the variable itself as body after the in
+                    let (ty_, _) = t
                     // update global environments
-                    tenv <- (x, t) :: tenv
+                    tenv <- (x, Forall ([], ty_)) :: tenv
                     venv <- (x, v) :: venv
                     x, (t, v)
 
             printfn "val %s : %s = %s" x (pretty_ty t) (pretty_value v)
-                
-    
-let rec printSubst (subst : subst) = 
-    match subst with
-    | [] -> ""
-    | ((_tyvar, _ty) :: rest) -> sprintf "[%d , %s] , %s" _tyvar (pretty_ty _ty) (printSubst rest)
-
-let printprint x y = 
-    printfn "fuch %s" (printSubst (unify x y))
 
 [<EntryPoint>]
 let main argv =
     let r =
-        let t1 = TyName ("Int")
-        let t2 = TyVar (1)
-        let subst = unify t1 t2
-        printf "ciao"
-        printprint t1 t2; 1
-    Console.ReadLine () |> ignore
-    r
-    (*
         try 
             if argv.Length < 1 then main_interactive ()
             else main_interpreter argv.[0]
@@ -91,4 +76,3 @@ let main argv =
         with e -> printfn "\nexception caught: %O" e; 1
     Console.ReadLine () |> ignore
     r
-    *)
