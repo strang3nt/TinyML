@@ -12,7 +12,7 @@ The teacher provided a skeleton of the project:
  - type checker
  - evaluator.
  
- Students were asked to implement the type inference algorithm and all of its subfunction (Algorithm W):
+ Students were asked to implement the type inference algorithm and all of its subfunction:
  
   - substitution
   - composition of substitution
