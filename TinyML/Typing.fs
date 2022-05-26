@@ -12,10 +12,9 @@ let type_error fmt = throw_formatted TypeError fmt
 type subst = (tyvar * ty) list
 
 let search_tyvar (s : subst) (t : tyvar) : ty =
-    let (_, y) = 
-        try List.find (fun (x, _) -> t = x) s
-        with :? System.Collections.Generic.KeyNotFoundException -> (1, TyVar(t))
-    y
+    match List.tryFind (fun (x, _) -> t = x) s with
+    | Some (_, y) -> y
+    | _ -> TyVar(t)
 
 let rec apply_subst (s : subst) (t : ty): ty = 
     match t with
@@ -47,8 +46,8 @@ let rec unify (t1 : ty) (t2 : ty) : subst =
     | TyTuple (_), TyTuple (_) -> type_error "unify: tuples %s and %s have different lengths" (pretty_ty t1) (pretty_ty t2)
     
     | TyArrow (x, y), TyArrow (w, z) -> 
-        let s1 = (unify x w)
-        s1 @ (unify (apply_subst s1 y) (apply_subst s1 z))
+        (unify x w)
+        |> fun (s1) -> s1 @ (unify (apply_subst s1 y) (apply_subst s1 z))
 
     | TyVar(x), y when occurs x y -> type_error "unify: %s occurs in %s, thus they are not unifiable" (pretty_ty t1) (pretty_ty t2)
     | TyVar(x), y when t1 = y -> []
@@ -58,10 +57,12 @@ let rec unify (t1 : ty) (t2 : ty) : subst =
     | _ -> type_error "unify: %s and %s are not unifiable" (pretty_ty t1) (pretty_ty t2)
 
 let compose_subst (s1 : subst) (s2 : subst) : subst =
-    let s2_applied = List.map (fun (y, x) -> (y, apply_subst s2 x)) s1 
-    let s2_filtered = List.filter (fun (x, _) -> not (List.exists (fun (y, _) -> x = y) s2_applied)) s2
-    s2_applied @ s2_filtered
+    s1
+    |> List.map (fun (y, x) -> (y, apply_subst s2 x))
+    |> fun (s1_applied) -> List.append s1_applied s2
+    |> List.distinctBy (fun (x, _) -> x)
 
+(* from a type gets type variables *)
 let rec freevars_ty (t : ty) : tyvar Set =
     match t with
     | TyName _ -> Set.empty
@@ -69,6 +70,7 @@ let rec freevars_ty (t : ty) : tyvar Set =
     | TyVar tv -> Set.singleton tv
     | TyTuple ts -> List.fold (fun set t -> Set.union set (freevars_ty t)) Set.empty ts 
 
+(* from a type scheme gets bounded type variables *)
 let freevars_scheme (Forall (tvs, t)) =
     Set.difference (freevars_ty t) (Set.ofList tvs)
 
@@ -79,12 +81,31 @@ let freevars_scheme (Forall (tvs, t)) =
 *)
 
 let gamma0 : ty env = [
+
     ("+", TyArrow (TyInt, TyArrow (TyInt, TyInt)))
+    ("+", TyArrow (TyFloat, TyArrow (TyFloat, TyFloat)))
     ("+", TyArrow (TyInt, TyArrow (TyFloat, TyFloat)))
     ("+", TyArrow (TyFloat, TyArrow (TyInt, TyFloat)))
-    ("+", TyArrow (TyFloat, TyArrow (TyFloat, TyFloat)))
+    
     ("-", TyArrow (TyInt, TyArrow (TyInt, TyInt)))
     ("-", TyArrow (TyFloat, TyArrow (TyFloat, TyFloat)))
+    ("-", TyArrow (TyFloat, TyArrow (TyInt, TyFloat)))
+    ("-", TyArrow (TyFloat, TyArrow (TyFloat, TyFloat)))
+
+    ("=", TyArrow (TyInt, TyArrow (TyInt, TyBool)))
+    ("=", TyArrow (TyFloat, TyArrow (TyFloat, TyBool)))
+    ("=", TyArrow (TyFloat, TyArrow (TyInt, TyBool)))
+    ("=", TyArrow (TyFloat, TyArrow (TyFloat, TyBool)))
+
+    ("<", TyArrow (TyInt, TyArrow (TyInt, TyBool)))
+    ("<", TyArrow (TyFloat, TyArrow (TyFloat, TyBool)))
+    ("<", TyArrow (TyFloat, TyArrow (TyInt, TyBool)))
+    ("<", TyArrow (TyFloat, TyArrow (TyFloat, TyBool)))
+
+    ("<=", TyArrow (TyInt, TyArrow (TyInt, TyBool)))
+    ("<=", TyArrow (TyFloat, TyArrow (TyFloat, TyBool)))
+    ("<=", TyArrow (TyFloat, TyArrow (TyInt, TyBool)))
+    ("<=", TyArrow (TyFloat, TyArrow (TyFloat, TyBool)))
 
 ]
 
@@ -100,16 +121,25 @@ let tyvar_reset () =
     tyvar_counter <- -1
 
 let instantiate (Forall (tyvar_list, t)) : ty =
-    let sub = List.map (fun x -> (x, TyVar(tyvar_generator()))) tyvar_list
-    apply_subst sub t
+    tyvar_list
+    |> List.map (fun x -> (x, TyVar(tyvar_generator())))
+    |> fun (sub) -> apply_subst sub t
 
 let generalize (env : scheme env) (t : ty) : scheme = 
-    let freevars_env = Set.fold (fun set (_, y) -> Set.union set (freevars_scheme y)) Set.empty (Set.ofList env)
-    let freevars_t = freevars_scheme (Forall ([], t))
-    Forall (Set.toList( Set.difference freevars_t freevars_env), t)
+    env
+    |> Set.ofList
+    |> Set.fold (fun acc (_, y) -> Set.union acc (freevars_scheme y)) Set.empty
+    |> fun (freevars_env) -> Forall (Set.toList (Set.difference (freevars_ty t) freevars_env), t)
 
-let apply_subst_to_env (s: subst) (env : scheme env) : scheme env=
-    List.map (fun (x, Forall (l, t)) -> (x, Forall (l, apply_subst s t))) env // TODO: should I remove from free variables the types I am substituting?
+let apply_subst_to_env (s: subst) (env : scheme env) : scheme env =
+    s
+    |> List.map fst
+    |> fun (boundVars) ->
+        // DONE: should I remove from free variables the types I am substituting? YES
+        env
+        |> List.map (fun (x, Forall (l, t)) ->
+            let l = Set.difference (set l) (set boundVars) |> Set.toList 
+            (x, Forall (l, apply_subst s t)))
 
 // TODO for exam
 let rec typeinfer_expr (env : scheme env) (e : expr) : ty * subst =
@@ -136,57 +166,58 @@ let rec typeinfer_expr (env : scheme env) (e : expr) : ty * subst =
         let (t2, s) = typeinfer_expr ((x, Forall ([], t1)) :: env) e
         TyArrow (t1, t2), s
 
-    | App (_) ->
+    | App (e1, e2) ->
         let tyvar_ = TyVar (tyvar_generator())
-        let s1, s2, s3 = overload env e tyvar_
+        let (t1, s1) = typeinfer_expr env e1
+        let (t2, s2) = typeinfer_expr (apply_subst_to_env s1 env) e2 
+        let s3 = unify (apply_subst s2 t1) (TyArrow (t2, tyvar_))
         let s1_s2_s3 = compose_subst s1 (compose_subst s2 s3)
         apply_subst s1_s2_s3 tyvar_, s1_s2_s3
 
-    | Let (x, t, e1, e2) ->
+    | Let(x, Some decl_type, e1, _) when fst (typeinfer_expr env e1) <> decl_type -> type_error "typeinfer_expr: type annotation in let binding of %s is wrong: exptected %s, but got %s" x (pretty_ty decl_type ) (pretty_ty (fst (typeinfer_expr env e1)))
+    | Let (x, _, e1, e2) ->
         let (t1, s1) = typeinfer_expr env e1
-        match t with
-        | None -> ()
-        | Some decl_type -> if t1 <> decl_type then type_error "typeinfer_expr: type annotation in let binding of %s is wrong: exptected %s, but got %s" x (pretty_ty decl_type ) (pretty_ty t1)
         let s = generalize (apply_subst_to_env s1 env) t1
         let env2 = apply_subst_to_env s1 ((x, s) :: env)
         let (t2, s2) = typeinfer_expr env2 e2
         t2, compose_subst s1 s2
 
     | LetRec (f, None, e1, e2) ->
-        let env1 = (f, Forall ([], TyVar (tyvar_generator())))::env
-        let (t1, s1) = typeinfer_expr env1 e1
-        let env2 = apply_subst_to_env s1 ((f, (generalize (apply_subst_to_env s1 env1) t1)) :: env)
-        let (t2, s2) = typeinfer_expr env2 e2
+        let env = (f, Forall ([], TyVar (tyvar_generator()))) :: env
+        let (t1, s1) = typeinfer_expr env e1
+        let env = apply_subst_to_env s1 ((f, (generalize (apply_subst_to_env s1 env) t1)) :: env)
+        let (t2, s2) = typeinfer_expr env e2
         t2, compose_subst s1 s2
 
     | LetRec (f, Some tf, e1, e2) -> 
-        let env0 = (f, Forall ([], tf)) :: env
-        let (t1, _) = typeinfer_expr env0 e1
+        let env = (f, Forall ([], tf)) :: env
+        let (t1, _) = typeinfer_expr env e1
         match t1 with
         | TyArrow _ -> ()
         | _ -> type_error "typeinfer_expr: let rec is restricted to functions, but got type %s" (pretty_ty t1)
         if t1 <> tf then type_error "typeinfer_expr: let rec type mismatch: expected %s, but got %s" (pretty_ty tf) (pretty_ty t1)
-        typeinfer_expr env0 e2
+        typeinfer_expr env e2
 
+    | IfThenElse (e1, _, _) when fst (typeinfer_expr env e1) <> TyBool -> type_error "typeinfer_expr: if condition must be bool, but got %s" (pretty_ty (fst (typeinfer_expr env e1)))
     | IfThenElse (e1, e2, e3o) -> 
-        let (t1, s1) = typeinfer_expr env e1
-        if t1 <> TyBool then type_error "typeinfer_expr: if condition must be a bool, but got %s" (pretty_ty t1)
-        let env1 = apply_subst_to_env s1 env
-        let (t2, s2) = typeinfer_expr env1 e2
+        let (_, s1) = typeinfer_expr env e1
+        let env = apply_subst_to_env (s1) env
+        let (t2, s2) = typeinfer_expr env e2
         match e3o with
         | None ->
             if t2 <> TyUnit then type_error "typeinfer_expr: if-then without else requires unit type in then branch, but got %s" (pretty_ty t2)
             TyUnit, compose_subst s2 s1
         | Some e3 ->
-            let (t3, s3) = typeinfer_expr (apply_subst_to_env s2 env1) e3
+            let (t3, s3) = typeinfer_expr (apply_subst_to_env s2 env) e3
             if t2 <> t3 then type_error "typeinfer_expr: type mismatch in if-then-else: then branch has type %s and is different from else branch type %s" (pretty_ty t2) (pretty_ty t3)
             t3, compose_subst s3 (compose_subst s2 s1)
 
     | Tuple ( el ) ->
-        let (tr, sub) = List.fold (fun ((tl, s) : (ty list * subst)) (en : expr) -> 
-            let (tn, sn) = typeinfer_expr (apply_subst_to_env s env) en
-            tn::tl, compose_subst s sn) ([], []) el 
-        TyTuple tr, sub
+        el
+        |> List.fold (fun ((tl, s) : (ty list * subst)) (en : expr) -> 
+            let (tn, sn) = typeinfer_expr (apply_subst_to_env s env) en in tn::tl, compose_subst s sn) 
+            ([], [])
+        |> fun (tr, sub) -> TyTuple tr, sub
 
     | BinOp (e1, op, e2) when (List.exists (fun (x, _) -> op = x) gamma0) -> typeinfer_expr env (App ((App (Var op, e1)), e2))
     | BinOp (_, op, _) -> unexpected_error "typeinfer_expr: binary operator %s not supported" op
@@ -194,53 +225,7 @@ let rec typeinfer_expr (env : scheme env) (e : expr) : ty * subst =
     | UnOp (op, _) -> unexpected_error "typeinfer_expr: unary operator %s not supported" op
 
     | _ -> unexpected_error "typeinfer_expr: unsupported expression: %s [AST: %A]" (pretty_expr e) e
-    
-and overload (env : scheme env) (e : expr) (t : ty) : subst * subst * subst =
-    match e with
-    | App (App (Var x, e3), e2) -> 
 
-        let rec remove_nth pred n lst =
-            match lst, n with
-            | (h::t, 1) when pred h -> t
-            | (h::t, _) when pred h -> remove_nth pred (n-1) t
-            | (h::t, _) -> h::remove_nth pred n t
-            | _ -> []
-        let mutable (s1_, s2_, s3_) = [], [], []
-        let m = (List.filter (fun (y, _) -> y = x) env).Length
-        let tyvar_ = TyVar (tyvar_generator())
-        let mutable continueLooping = true
-        let mutable i = 0 
-        while continueLooping do
-            let env_ = if (i > 0) then remove_nth (fun ((es, _) : string * scheme) -> es = x) i env else env
-            let t0, s0 = typeinfer_expr env_ (Var x)
-            let (t1, s1) = typeinfer_expr (apply_subst_to_env s0 env) e3
-            let unified_s1_s0 = 
-                try 
-                    unify (apply_subst s1 t0) (TyArrow (t1, tyvar_))
-                with
-                    | TypeError _  when i = m - 1 -> reraise()
-                    | TypeError _ -> []
-            if not unified_s1_s0.IsEmpty then
-                let s0_s1_unified_s1_s0 = compose_subst s0 (compose_subst s1 unified_s1_s0)
-                let (t2, s2) = typeinfer_expr (apply_subst_to_env s0_s1_unified_s1_s0 env) e2 
-                s1_ <- s0_s1_unified_s1_s0
-                s2_ <- s2
-                s3_ <- 
-                    try 
-                        unify (apply_subst s2 (apply_subst s0_s1_unified_s1_s0 tyvar_)) (TyArrow (t2, t))
-                    with
-                        | TypeError _  when i = m - 1 -> reraise()
-                        | TypeError _ -> []
-            if s3_.IsEmpty then i <- i + 1 else continueLooping <- false
-
-        s1_, s2_, s3_
-        
-    | App (e1, e2) -> 
-        let (t1, s1) = typeinfer_expr env e1
-        let (t2, s2) = typeinfer_expr (apply_subst_to_env s1 env) e2 
-        s1, s2, unify (apply_subst s2 t1) (TyArrow (t2, t))
-
-    | _ -> unexpected_error "typeinfer_expr: overload: function can only be called with an expression type: %s received" (pretty_expr e)
 
 (* 
    ------------------

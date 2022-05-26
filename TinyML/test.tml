@@ -5,4 +5,10 @@
 
 // line comment
 
-let x = 1.5 + 1 + 1 + 1 + 1 + 1.5 + 1 in x
+let rec fib n = 
+   if (n <= 1) then n
+   else fib (n - 1) + fib (n - 2)
+
+in fib 6
+
+(* let rec sum n = if (n = 0) then 0 else sum (n - 1) in sum 5 *)
