@@ -32,28 +32,28 @@ let rec occurs (tvar : tyvar) (t : ty) : bool =
     | _ -> false
 
 let rec unify (t1 : ty) (t2 : ty) : subst =
+
     match t1, t2 with
-    | TyName (x), TyName (y) ->
-        if x = y 
-        then [] 
-        else type_error "unify: cannot unify different primitive types %s and %s" (pretty_ty t1) (pretty_ty t2)
-    | TyTuple (x), TyTuple (y) -> 
-        if List.length(x) = 0 && List.length(y) = 0
-        then []
-        else if List.length(x) = List.length(y)
-        then 
-            let s1 = unify (List.head x) (List.head y) 
-            s1 @ unify
-                (TyTuple (List.skip 1 x |> List.map (fun i -> apply_subst s1 i)))
-                (TyTuple (List.skip 1 y |> List.map (fun i -> apply_subst s1 i)))
-        else type_error "unify: tuples %s and %s have different lengths" (pretty_ty t1) (pretty_ty t2)
+
+    | TyName (x), TyName (y) when x = y -> []
+    | TyName (_), TyName (_) -> type_error "unify: cannot unify different primitive types %s and %s" (pretty_ty t1) (pretty_ty t2)
+    
+    | TyTuple (x), TyTuple (y) when List.length(x) = 0 && List.length(y) = 0 -> []
+    | TyTuple (x), TyTuple (y) when List.length(x) = List.length(y) -> 
+        let s1 = unify (List.head x) (List.head y) 
+        s1 @ unify
+            (TyTuple (List.skip 1 x |> List.map (fun i -> apply_subst s1 i)))
+            (TyTuple (List.skip 1 y |> List.map (fun i -> apply_subst s1 i)))
+    | TyTuple (_), TyTuple (_) -> type_error "unify: tuples %s and %s have different lengths" (pretty_ty t1) (pretty_ty t2)
+    
     | TyArrow (x, y), TyArrow (w, z) -> 
         let s1 = (unify x w)
         s1 @ (unify (apply_subst s1 y) (apply_subst s1 z))
-    | TyVar(x), y -> 
-        if occurs x y 
-        then type_error "unify: %s occurs in %s, thus they are not unifiable" (pretty_ty t1) (pretty_ty t2)
-        else if t1 = y then [] else [(x, y)]
+
+    | TyVar(x), y when occurs x y -> type_error "unify: %s occurs in %s, thus they are not unifiable" (pretty_ty t1) (pretty_ty t2)
+    | TyVar(x), y when t1 = y -> []
+    | TyVar(x), y -> [(x, y)]
+
     | _, TyVar(_) -> unify t2 t1
     | _ -> type_error "unify: %s and %s are not unifiable" (pretty_ty t1) (pretty_ty t2)
 
@@ -120,12 +120,12 @@ let rec typeinfer_expr (env : scheme env) (e : expr) : ty * subst =
     | Lit (LChar _) -> TyChar, []
     | Lit (LBool _) -> TyBool, []
     | Lit LUnit -> TyUnit, []
-    | Var x -> 
-        let (_, s1) = 
-            try List.find(fun (y, _) -> y = x) env
-            with :? System.Collections.Generic.KeyNotFoundException -> type_error "typeinfer_expr: variable %s is not defined in the environment" x
-        instantiate s1, []
 
+    | Var x -> 
+        match List.tryFind(fun (y, _) -> y = x) env with
+        | Some (_, s1) -> instantiate s1, []
+        | _ -> type_error "typeinfer_expr: variable %s is not defined in the environment" x
+        
     | Lambda (x, None, e)  ->
         let tyvar_ = TyVar(tyvar_generator())
         let (t2, s) = typeinfer_expr ((x, Forall ([], tyvar_)) :: env) e
@@ -161,7 +161,7 @@ let rec typeinfer_expr (env : scheme env) (e : expr) : ty * subst =
 
     | LetRec (f, Some tf, e1, e2) -> 
         let env0 = (f, Forall ([], tf)) :: env
-        let (t1, s1) = typeinfer_expr env0 e1
+        let (t1, _) = typeinfer_expr env0 e1
         match t1 with
         | TyArrow _ -> ()
         | _ -> type_error "typeinfer_expr: let rec is restricted to functions, but got type %s" (pretty_ty t1)
@@ -188,10 +188,8 @@ let rec typeinfer_expr (env : scheme env) (e : expr) : ty * subst =
             tn::tl, compose_subst s sn) ([], []) el 
         TyTuple tr, sub
 
-    | BinOp (e1, op, e2) ->
-        if (List.exists (fun (x, y) -> op = x) gamma0) then
-            typeinfer_expr env (App ((App (Var op, e1)), e2))
-        else unexpected_error "typeinfer_expr: binary operator %s not supported" op
+    | BinOp (e1, op, e2) when (List.exists (fun (x, _) -> op = x) gamma0) -> typeinfer_expr env (App ((App (Var op, e1)), e2))
+    | BinOp (_, op, _) -> unexpected_error "typeinfer_expr: binary operator %s not supported" op
 
     | UnOp (op, _) -> unexpected_error "typeinfer_expr: unary operator %s not supported" op
 
