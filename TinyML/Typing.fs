@@ -166,36 +166,32 @@ let rec typeinfer_expr (env : scheme env) (e : expr) : ty * subst =
         let t2, s = typeinfer_expr ((x, Forall ([], t1)) :: env) e
         TyArrow (t1, t2), s
 
-    | App (App (Var x, e3), e2) ->
+    | App (App (Var ("+" | "-" | "=" | "<" | "<=" as x), e3), e2) ->
         let rec remove_nth pred n lst =
             match lst, n with
             | h::t, 1 when pred h -> t
             | h::t, _ when pred h -> remove_nth pred (n-1) t
             | h::t, _ -> h::remove_nth pred n t
             | _ -> []
-        let mutable s1_, s2_, s3_ = [], [], []
+        // let mutable s1_, s2_, s3_ = [], [], []
         let m = (List.filter (fun (y, _) -> y = x) env).Length - 1
         let tv1 = TyVar (tyvar_generator())
         let tv2 = TyVar (tyvar_generator())
-        let mutable continueLooping = true
-        let mutable i = 0 
-        while continueLooping do
+        let rec overloading i =
+            let env_ = if (i > 0) then remove_nth (fun ((es, _) : string * scheme) -> es = x) i env else env
+            let t0, _ = typeinfer_expr env_ (Var x)
+            let t1, s1 = typeinfer_expr env e3
+            
             try
-                let env_ = if (i > 0) then remove_nth (fun ((es, _) : string * scheme) -> es = x) i env else env
-                let t0, _ = typeinfer_expr env_ (Var x)
-                let t1, s1 = typeinfer_expr env e3
                 let unified_s1_s0 = unify (apply_subst s1 t0) (TyArrow (t1, tv1))
                 let s0_s1_unified_s1_s0 = compose_subst s1 unified_s1_s0
-                let t2, s2 = typeinfer_expr (apply_subst_to_env s0_s1_unified_s1_s0 env) e2 
-                s1_ <- s0_s1_unified_s1_s0
-                s2_ <- s2
-                s3_ <- unify (apply_subst s2 (apply_subst s0_s1_unified_s1_s0 tv1)) (TyArrow (t2, tv2))
-                continueLooping <- false
+                let t2, s2 = typeinfer_expr (apply_subst_to_env s0_s1_unified_s1_s0 env) e2
+                s0_s1_unified_s1_s0, s2, unify (apply_subst s2 (apply_subst s0_s1_unified_s1_s0 tv1)) (TyArrow (t2, tv2))
             with
-                | TypeError _  when i = m -> reraise()
-                | TypeError _ -> s3_ <- []; i <- i + 1
-    
-        let s1_s2_s3 = compose_subst s1_ (compose_subst s2_ s3_)
+                | TypeError _ when i = m -> type_error "Couldn't find compatible types for operator %s: found type %s for the left operand" x (pretty_ty t1)
+                | TypeError _ -> overloading (i + 1)
+        let s1, s2, s3 = overloading 0
+        let s1_s2_s3 = compose_subst s1 (compose_subst s2 s3)
         apply_subst s1_s2_s3 tv2, s1_s2_s3
 
     | App (e1, e2) ->
@@ -230,9 +226,11 @@ let rec typeinfer_expr (env : scheme env) (e : expr) : ty * subst =
         if t1 <> tf then type_error "typeinfer_expr: let rec type mismatch: expected %s, but got %s" (pretty_ty tf) (pretty_ty t1)
         typeinfer_expr env e2
 
-    | IfThenElse (e1, _, _) when fst (typeinfer_expr env e1) <> TyBool -> type_error "typeinfer_expr: if condition must be bool, but got %s" (pretty_ty (fst (typeinfer_expr env e1)))
+    // | IfThenElse (e1, _, _) when fst (typeinfer_expr (apply_subst_to_env ) e1) <> TyBool -> type_error "typeinfer_expr: if condition must be bool, but got %s" (pretty_ty (fst (typeinfer_expr env e1)))
     | IfThenElse (e1, e2, e3o) -> 
-        let _, s1 = typeinfer_expr env e1
+        let t1, s1 = typeinfer_expr env e1
+        let s1' = unify t1 (TyBool)
+        let s1 = compose_subst s1 s1'
         let env = apply_subst_to_env s1 env
         let t2, s2 = typeinfer_expr env e2
         match e3o with

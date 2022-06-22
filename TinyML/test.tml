@@ -5,11 +5,17 @@
 
 // line comment
 
-<<<<<<< HEAD
+(*
 let f x y = (x, y) in
 let g x = f x x
-in let f = fun x -> (x + 1, if x then 1 else 2) in ()
-=======
+in let f = fun x -> (if x then 1 else 2, x + 1) in () *)
+
+// f: x: ('a -> Int -> 'b) -> y: 'a -> 'b
+(* let f x y = x y 1 in f *)
+
+
+let f x y z = x y z 1 in f
+
 (*
 let rec fib n = 
    if (n <= 1) then n
@@ -17,5 +23,4 @@ let rec fib n =
 
 in fib 6 *)
 
-let x = 1 + 1.5 in x + 1.5
->>>>>>> develop
+// let x = 1 + 1.5 in x + 1.5
